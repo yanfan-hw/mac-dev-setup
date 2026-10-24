@@ -43,6 +43,9 @@ echo "✓ Personal: $PERSONAL_DIR"
 # SSH directory
 # ------------------------------------------------------------
 
+echo
+echo "→ Preparing SSH directory..."
+
 mkdir -p "$SSH_DIR"
 chmod 700 "$SSH_DIR"
 
@@ -69,6 +72,8 @@ create_ssh_key() {
     -t ed25519 \
     -f "$key_path" \
     -C "$label"
+
+  echo "✓ Created $label SSH key"
 }
 
 create_ssh_key "$WORK_KEY" "GitHub Work"
@@ -90,6 +95,8 @@ Host github-work
     User git
     IdentityFile $WORK_KEY
     IdentitiesOnly yes
+    AddKeysToAgent yes
+    UseKeychain yes
 EOF
 
   echo "✓ Added github-work"
@@ -106,6 +113,8 @@ Host github-personal
     User git
     IdentityFile $PERSONAL_KEY
     IdentitiesOnly yes
+    AddKeysToAgent yes
+    UseKeychain yes
 EOF
 
   echo "✓ Added github-personal"
@@ -123,6 +132,8 @@ echo "→ Adding SSH keys to ssh-agent..."
 ssh-add --apple-use-keychain "$WORK_KEY" 2>/dev/null || true
 ssh-add --apple-use-keychain "$PERSONAL_KEY" 2>/dev/null || true
 
+echo "✓ SSH keys added"
+
 # ------------------------------------------------------------
 # GitHub CLI authentication
 # ------------------------------------------------------------
@@ -133,10 +144,16 @@ setup_github_account() {
   local label="$3"
 
   echo
-  echo "→ Setting up GitHub account: $username"
+  echo "---------------------------------"
+  echo " GitHub: $label ($username)"
+  echo "---------------------------------"
 
-  # Check whether account is already authenticated.
+  # ----------------------------------------------------------
+  # Login
+  # ----------------------------------------------------------
+
   if ! gh auth status --hostname github.com 2>&1 | grep -q "$username"; then
+    echo
     echo "→ Login to GitHub as: $username"
     echo "  Make sure you select the correct GitHub account in the browser."
 
@@ -144,21 +161,44 @@ setup_github_account() {
       --hostname github.com \
       --git-protocol ssh \
       --skip-ssh-key \
-      --web
+      --web \
+      --scopes admin:public_key
+  else
+    echo "✓ GitHub account already authenticated: $username"
   fi
 
-  # Switch gh to this account.
+  # ----------------------------------------------------------
+  # Switch active account
+  # ----------------------------------------------------------
+
+  echo "→ Switching active GitHub account..."
+
   gh auth switch \
     --hostname github.com \
     --user "$username"
 
   echo "✓ Active GitHub account: $username"
 
-  # Check whether this SSH key is already registered.
+  # ----------------------------------------------------------
+  # Ensure SSH key permission
+  # ----------------------------------------------------------
+
+  echo "→ Ensuring SSH key permission..."
+
+  gh auth refresh \
+    --hostname github.com \
+    --scopes admin:public_key
+
+  # ----------------------------------------------------------
+  # Upload SSH public key
+  # ----------------------------------------------------------
+
   local fingerprint
   fingerprint="$(ssh-keygen -lf "$public_key" | awk '{print $2}')"
 
-  if gh ssh-key list | grep -q "$fingerprint"; then
+  echo "→ Checking GitHub SSH keys..."
+
+  if gh ssh-key list 2>/dev/null | grep -q "$fingerprint"; then
     echo "✓ $label SSH key already exists on GitHub"
   else
     echo "→ Uploading $label SSH key..."
@@ -196,6 +236,9 @@ create_git_identity() {
   echo
   echo "→ Configure $label Git identity"
 
+  local git_name
+  local git_email
+
   read -r -p "Name: " git_name
   read -r -p "Email: " git_email
 
@@ -205,8 +248,18 @@ create_git_identity() {
   echo "✓ Created $config_file"
 }
 
-create_git_identity "$WORK_GITCONFIG" "Work"
-create_git_identity "$PERSONAL_GITCONFIG" "Personal"
+echo
+echo "================================="
+echo "       Git Identities"
+echo "================================="
+
+create_git_identity \
+  "$WORK_GITCONFIG" \
+  "Work"
+
+create_git_identity \
+  "$PERSONAL_GITCONFIG" \
+  "Personal"
 
 # ------------------------------------------------------------
 # Conditional Git configuration
@@ -227,6 +280,34 @@ echo "✓ Work projects use work Git identity"
 echo "✓ Personal projects use personal Git identity"
 
 # ------------------------------------------------------------
+# Verify SSH
+# ------------------------------------------------------------
+
+echo
+echo "================================="
+echo "       SSH Verification"
+echo "================================="
+echo
+
+echo "→ Testing Work GitHub SSH..."
+ssh -T git@github-work 2>&1 || true
+
+echo
+echo "→ Testing Personal GitHub SSH..."
+ssh -T git@github-personal 2>&1 || true
+
+# ------------------------------------------------------------
+# Leave personal GitHub account active
+# ------------------------------------------------------------
+
+echo
+echo "→ Switching GitHub CLI back to personal account..."
+
+gh auth switch \
+  --hostname github.com \
+  --user "$PERSONAL_GITHUB_USER"
+
+# ------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------
 
@@ -237,22 +318,28 @@ echo "================================="
 echo
 
 echo "Directories:"
-echo "  Work:     $WORK_DIR"
-echo "  Personal: $PERSONAL_DIR"
+echo "  Work:"
+echo "    $WORK_DIR"
+echo
+echo "  Personal:"
+echo "    $PERSONAL_DIR"
 
 echo
-echo "SSH:"
-echo "  Work:     git@github-work"
-echo "  Personal: git@github-personal"
+echo "SSH aliases:"
+echo "  Work:"
+echo "    git@github-work"
+echo
+echo "  Personal:"
+echo "    git@github-personal"
 
 echo
 echo "Clone examples:"
+echo
 echo "  Work:"
 echo "    git clone git@github-work:ORG/REPO.git"
-
 echo
 echo "  Personal:"
-echo "    git clone git@github-personal:USER/REPO.git"
+echo "    git clone git@github-personal:$PERSONAL_GITHUB_USER/REPO.git"
 
 echo
 echo "GitHub CLI:"
