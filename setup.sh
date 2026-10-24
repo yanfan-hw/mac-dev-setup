@@ -12,9 +12,6 @@ echo
 echo "→ Homebrew"
 "$ROOT_DIR/scripts/homebrew.sh"
 
-echo "→ Runtimes"
-"$ROOT_DIR/scripts/runtimes.sh"
-
 echo "→ Git"
 "$ROOT_DIR/scripts/git.sh"
 
